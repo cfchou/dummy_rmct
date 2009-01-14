@@ -60,9 +60,9 @@ struct rmct_criterion {
 };
 
 // classic proc_fs
-/* remove conntrack matching [IP_CT_DIR_ORIGINAL].tuple.dst, presented as
+/* remove conntrack matching tuple.dst, presented as
  * network-endian proto:ip:port. proto: 0 for UDP, 1 for TCP.
- * e.g. [IP_CT_DIR_ORIGINAL].tuple.dst UDP 10.7.1.115:80 would be:
+ * e.g. tuple.dst UDP 10.7.1.115:80 would be:
  * bash>echo '0:0a070173:0050' >/proc/rmct_list
  * here it receives len == 16 bytes(extra '\n' pended)
  */
@@ -94,6 +94,8 @@ static int rmct_write(struct file *flip, char const __user *buff,
 		DEBUGP(KERN_ALERT "[ERR] wrong format.\n");
 		return -EFAULT;
 	}
+	DEBUGP(KERN_ALERT "input %c:%x:%x\n", proto, ip, port);
+	proto -= '0';
 	/*
 	if (port > htonl(65535)) {
 		DEBUGP(KERN_ALERT "[ERR] wrong port.\n");
@@ -105,7 +107,6 @@ static int rmct_write(struct file *flip, char const __user *buff,
 		return -EFAULT;
 	}
 
-	DEBUGP(KERN_ALERT "input %c:%x:%x\n", proto, ip, port);
 	if (NULL == (rc = kmalloc(sizeof(struct rmct_criterion), GFP_KERNEL))) {
 		DEBUGP(KERN_ALERT "[ERR] kmalloc failed.\n");
 		return -EFAULT;
@@ -137,7 +138,7 @@ static int rmct_read(char *page, char **start, off_t off, int count, int *eof,
 			DEBUGP(KERN_ALERT "[WARNING] too large\n");
 			break;
 		}
-		len += sprintf(page, "%c:%x:%x\n", tmp->proto, tmp->ip, tmp->port);
+		len += sprintf(page, "%c:%x:%x\n", tmp->proto + '0', tmp->ip, tmp->port);
 	}
 	spin_unlock_bh(rmct_list_lock);
 	return len;
@@ -153,10 +154,12 @@ static void find_conntrack_put(struct rmct_criterion const *rc)
 	int i = 0;
 	
 	memset(&tp, 0, sizeof(tp));
-	tp.dst.u3.ip = rc->ip;
-	tp.dst.u.tcp.port = rc->port;
+	tp.dst.u3.ip = htonl(rc->ip);
+	tp.dst.u.tcp.port = htons(rc->port);
 	tp.dst.protonum = rc->proto ? 0x06 : 0x11;
 
+	DEBUGP(KERN_ALERT "matching dst(%hd): " NIPQUAD_FMT ":%d\n",
+		tp.dst.protonum, NIPQUAD(tp.dst.u3.all), ntohs(tp.dst.u.all));
 	// reference to:
 	// nf_conntrack_find_get
 	// nf_conntrack_set_hashsize
@@ -167,6 +170,14 @@ static void find_conntrack_put(struct rmct_criterion const *rc)
 		for (i = 0; i < nf_conntrack_htable_size; i++) {
 			hlist_for_each_entry(hh, nn, &nf_conntrack_hash[i],
 				hnode) {
+				//
+				DEBUGP(KERN_ALERT "src: " NIPQUAD_FMT ":%d -> "
+					"dst(%hd): " NIPQUAD_FMT ":%d\n",
+					NIPQUAD(hh->tuple.src.u3.all),
+					ntohs(hh->tuple.src.u.all),
+					hh->tuple.dst.protonum,
+					NIPQUAD(hh->tuple.dst.u3.all),
+					ntohs(hh->tuple.dst.u.all));
 				if (!__nf_ct_tuple_dst_equal(&hh->tuple, &tp)) {
 					continue;
 				}
@@ -204,7 +215,8 @@ static void rmct_work_func(struct work_struct *work)
 		list_del_init(&rc->list);
 		spin_unlock_bh(rmct_list_lock);
 
-		DEBUGP(KERN_ALERT "[INFO] kill by criterion: %x:%x\n", rc->ip, rc->port);
+		DEBUGP(KERN_ALERT "[INFO] kill by criterion: %c:%x:%x\n",
+			rc->proto + '0', rc->ip, rc->port);
 		find_conntrack_put(rc);
 		KFREE(rc);
 	}
@@ -218,6 +230,7 @@ static void rmct_fini(void)
 {
 	struct rmct_criterion *rc, *tmp;
 	DEBUGP(KERN_ALERT "[INFO] rmct_fini\n");
+	remove_proc_entry(RMCT_LIST, NULL);
 	spin_lock_bh(rmct_list_lock);
 	list_for_each_entry_safe(rc, tmp, &rmct_list, list) {
 		list_del_init(&rc->list);
@@ -234,9 +247,6 @@ static int __init rmct_init(void)
 	DEBUGP(KERN_ALERT "[INFO] rmct_init clearance_interval=%u\n",
 		clearance_interval);
 
-	if (rmct_entry) {
-		goto fail_init;
-	}
 	if (NULL == (rmct_entry = create_proc_entry(RMCT_LIST, S_IWUSR,
 		NULL))) {
 		DEBUGP(KERN_ALERT "[ERR] create_proc_entry %s failed!\n",

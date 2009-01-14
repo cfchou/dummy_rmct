@@ -1,6 +1,33 @@
 
 This module is used to remove conntracks under different criteria.
 
+Usage:
+Remove conntrack matching tuple.dst, presented as network-endian.
+FORMAT:	"proto:ip:port"
+	proto: 0 for UDP, 1 for TCP.
+	The total string length would always be 16 bytes(extra '\n' appended).
+
+bash> insmod dummy_rmct
+or
+bash> insmod dummy_rmct clearance_interval=10
+clearance_interval is interval in second to do the clearance.
+
+
+Add a criterion.
+bash> echo '1:0a07c906:0050' > /proc/rmct_list
+Which is to match destination as "TCP 10.7.201.6:80"
+
+Once module proceeds criteria. It'll then remove them.
+
+See what's been add but has not been removed
+bash>cat /proc/rm_list
+
+bash> rmmod dummy_rmct
+
+
+
+
+BUILD:
 bash> cd /path/to/module-source/
 bash> echo "obj-m += dummy_rmct.ko" > Makefile
 bash> make -C /usr/src/linux/ M=/root/src/dummy_rmct modules
