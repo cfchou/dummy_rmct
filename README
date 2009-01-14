@@ -28,6 +28,7 @@ bash> rmmod dummy_rmct
 
 
 BUILD:
+I build and test it under kernel 2.6.26.
 bash> cd /path/to/module-source/
 bash> echo "obj-m += dummy_rmct.ko" > Makefile
 bash> make -C /usr/src/linux/ M=/root/src/dummy_rmct modules
