@@ -1,0 +1,6 @@
+
+This module is used to remove conntracks under different criteria.
+
+bash> cd /path/to/module-source/
+bash> echo "obj-m += dummy_rmct.ko" > Makefile
+bash> make -C /usr/src/linux/ M=/root/src/dummy_rmct modules
