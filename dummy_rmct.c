@@ -131,14 +131,18 @@ static int rmct_read(char *page, char **start, off_t off, int count, int *eof,
 	void *data)
 {
 	int len = 0;
+	char buf[WRITE_ONCE_LEN + 1];
 	struct rmct_criterion *tmp = NULL;
+	page[0] = 0;
 	spin_lock_bh(rmct_list_lock);
 	list_for_each_entry(tmp, &rmct_list, list) {
 		if (PAGE_SIZE <= len + WRITE_ONCE_LEN) {
 			DEBUGP(KERN_ALERT "[WARNING] too large\n");
 			break;
 		}
-		len += sprintf(page, "%c:%x:%x\n", tmp->proto + '0', tmp->ip, tmp->port);
+		len += snprintf(buf, sizeof(buf), "%c:%08x:%04x\n",
+			tmp->proto + '0', tmp->ip, tmp->port);
+		strcat(page, buf);
 	}
 	spin_unlock_bh(rmct_list_lock);
 	return len;
